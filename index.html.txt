@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Kerala SMS Scam Checker — Mini</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;max-width:760px;margin:30px auto;padding:20px}
+    h1{margin:0 0 8px}
+    .card{border:1px solid #ddd;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+    textarea{width:100%;height:120px;padding:8px;font-size:14px}
+    button{padding:10px 14px;margin-top:8px;font-size:15px;cursor:pointer}
+    .result{margin-top:12px;padding:12px;border-radius:6px}
+    .bad{background:#ffecec;border:1px solid #ffbcbc;color:#7a1a1a}
+    .warn{background:#fff8e1;border:1px solid #ffe08a;color:#6b4f00}
+    .good{background:#ecfff0;border:1px solid #bff1c6;color:#1b5e20}
+    ul{margin:6px 0 0 18px}
+    .meta{font-size:13px;color:#666;margin-top:8px}
+    .sample{font-size:13px;color:#0b5cff;cursor:pointer;text-decoration:underline}
+  </style>
+</head>
+<body>
+  <h1>Kerala SMS Scam Checker — Mini</h1>
+  <div class="card">
+    <label for="sms">Paste SMS / Message text here:</label>
+    <textarea id="sms" placeholder="Eg. 'Your account XXXX is debited with ₹7500. Visit tinyurl.com/xyz to dispute.'"></textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button id="checkBtn">Check Message</button>
+      <button id="clearBtn">Clear</button>
+      <div style="margin-left:auto" class="meta">Beginner-friendly · No data leaves your browser</div>
+    </div>
+
+    <div id="output" style="margin-top:12px"></div>
+
+    <div class="meta" style="margin-top:12px">
+      Try sample messages:
+      <span class="sample" onclick="fillSample(0)">Suspicious Link</span> ·
+      <span class="sample" onclick="fillSample(1)">Urgent Money Request</span> ·
+      <span class="sample" onclick="fillSample(2)">Likely Safe (bank OTP)</span>
+    </div>
+  </div>
+
+<script>
+const samples = [
+  "Alert: Your A/C XXXX is debited ₹8,500. Visit tinyurl.com/abc to dispute.",
+  "Hi, this is John. Can you lend me 1500? Call me 9876543210.",
+  "SBI OTP: 123456 valid for 10 minutes. Do not share with anyone."
+];
+
+function fillSample(i){ document.getElementById('sms').value = samples[i]; document.getElementById('output').innerHTML=''; }
+
+function checkSMS(text){
+  const reasons = [];
+  const lower = text.toLowerCase();
+
+  // 1) URL check (simple)
+  const urlRegex = /(?:https?:\/\/)?(?:www\.)?[a-z0-9\-]+\.[a-z]{2,}(?:\/\S*)?/ig;
+  const urls = text.match(urlRegex) || [];
+  if(urls.length){
+    reasons.push({tag:'link',msg:`Contains link(s): ${urls.join(', ')}`});
+  }
+
+  // 2) Shortener / suspicious domains (common patterns)
+  const shortenerRegex = /\b(tinyurl|bit\.ly|goo\.gl|ow\.ly|shorturl)\b/i;
+  if(shortenerRegex.test(text)) reasons.push({tag:'short', msg:'Uses short/redirect URL — hides destination'});
+
+  // 3) Urgency / pressure words
+  const urgency = /\b(urgent|immediately|within 24 hours|act now|verify now|suspend(ed)?|blocked|limited time|claim now)\b/i;
+  if(urgency.test(text)) reasons.push({tag:'urgency', msg:'Contains urgency language (pressure tactic)'});
+
+  // 4) Money request or transfer words
+  const money = /\b(debit(ed)?|credited|withdrawn|transfer(ed)?|upi|paytm|transaction|amount|loan|refund)\b/i;
+  if(money.test(text)) reasons.push({tag:'money', msg:'Mentions transactions or money — check carefully'});
+
+  // 5) Request for sensitive info
+  const sensitive = /\b(password|pin|otp|one time password|passcode|cvv|account number|a\/c)\b/i;
+  if(sensitive.test(text)) reasons.push({tag:'sensitive', msg:'Requests or mentions sensitive info (OTP/PIN/account) — never share'});
+
+  // 6) Phone number pattern (possible social engineering)
+  const phoneRegex = /(?:(?:\+91|\b0)?[6-9]\d{9})/g;
+  const phones = text.match(phoneRegex) || [];
+  if(phones.length) reasons.push({tag:'phone', msg:`Contains phone number(s): ${phones.join(', ')}`});
+
+  // 7) Sender impersonation hints (bank names)
+  const bankNames = /\b(sbi|state bank|icici|hdfc|axis bank|kerala bank|ksfe|upi)\b/i;
+  if(bankNames.test(text) && urls.length) reasons.push({tag:'impersonation', msg:'Mentions bank name together with link — common scam pattern'});
+
+  // 8) All-caps or many exclamation (low-effort spam)
+  if(/[A-Z]{6,}/.test(text) || /!{2,}/.test(text)) reasons.push({tag:'shout', msg:'Suspicious formatting (all caps or many exclamations)'});
+
+  // 9) Heuristics: combine signals to a score
+  let score = 0;
+  reasons.forEach(r=>{
+    if(r.tag==='link' || r.tag==='short') score += 3;
+    else if(r.tag==='impersonation' || r.tag==='sensitive') score += 2;
+    else if(r.tag==='urgency' || r.tag==='money' || r.tag==='phone') score += 1.5;
+    else score += 1;
+  });
+
+  // If no reasons, small safe check: OTP-only messages are usually legit (but still sensitive)
+  const otpOnly = /^\s*[A-Za-z]*\s*otp[:\s]*\d{4,6}\b/i.test(text.trim());
+
+  let verdict = 'Likely Safe';
+  let tone = 'good';
+  if(score >= 5) { verdict = 'High Risk — Likely Scam'; tone = 'bad'; }
+  else if(score >= 2.5) { verdict = 'Possible Scam — Be Cautious'; tone = 'warn'; }
+  else if(score > 0 && !otpOnly) { verdict = 'Suspicious — Check Carefully'; tone = 'warn'; }
+
+  // Confidence (simple)
+  const confidence = Math.min(95, Math.round(score * 15 + 30));
+
+  return {verdict, tone, confidence, reasons, otpOnly};
+}
+
+document.getElementById('checkBtn').addEventListener('click', ()=>{
+  const txt = document.getElementById('sms').value.trim();
+  const out = document.getElementById('output');
+  if(!txt){ out.innerHTML = '<div class="result warn">Please paste an SMS message first.</div>'; return; }
+
+  const res = checkSMS(txt);
+  let html = `<div class="result ${res.tone}"><strong>${res.verdict}</strong>`;
+  html += `<div style="margin-top:6px">Confidence: <strong>${res.confidence}%</strong></div>`;
+
+  if(res.reasons.length){
+    html += `<div style="margin-top:8px"><em>Why:</em><ul>`;
+    res.reasons.forEach(r => html += `<li>${r.msg}</li>`);
+    html += `</ul></div>`;
+  }
+
+  if(res.otpOnly){
+    html += `<div style="margin-top:8px"><strong>Note:</strong> This looks like an OTP message. OTPs are sensitive — <em>never</em> share them.</div>`;
+  }
+
+  html += `<div class="meta" style="margin-top:10px">Tip: If it asks to click a link & enter credentials, treat as scam. For bank doubts call the bank's official number.</div>`;
+  html += `</div>`;
+  out.innerHTML = html;
+});
+
+document.getElementById('clearBtn').addEventListener('click', ()=>{
+  document.getElementById('sms').value = '';
+  document.getElementById('output').innerHTML = '';
+});
+</script>
+</body>
+</html>
